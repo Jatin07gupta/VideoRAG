@@ -12,7 +12,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
-from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
+try:
+    from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
+except ImportError:
+    from langchain_classic.retrievers import EnsembleRetriever, ContextualCompressionRetriever
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
