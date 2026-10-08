@@ -3,6 +3,9 @@ VideoRAG: Production-Grade YouTube Transcript RAG System
 Author: Jatin Gupta (https://github.com/Jatin07gupta)
 """
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import streamlit as st
 import os
 from langchain_community.document_loaders import YoutubeLoader
@@ -58,9 +61,33 @@ def process_video(url):
             st.success(f"✅ Loaded {len(raw_docs[0].page_content)} characters.")
 
             # Layer 2: Semantic Chunking
-            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-            text_splitter = SemanticChunker(embeddings, breakpoint_threshold_type="standard_deviation")
-            docs = text_splitter.split_documents(raw_docs)
+            # text-embedding-004 was deprecated/retired; use gemini-embedding-001 with graceful fallbacks
+            embedding_candidates = [
+                "models/gemini-embedding-001",
+                "gemini-embedding-001",
+                "models/embedding-001",
+                "embedding-001"
+            ]
+            embeddings = None
+            for emb_model in embedding_candidates:
+                try:
+                    candidate = GoogleGenerativeAIEmbeddings(model=emb_model)
+                    candidate.embed_query("test")
+                    embeddings = candidate
+                    break
+                except Exception:
+                    continue
+
+            if embeddings is None:
+                embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+
+            try:
+                text_splitter = SemanticChunker(embeddings, breakpoint_threshold_type="standard_deviation")
+                docs = text_splitter.split_documents(raw_docs)
+            except Exception as e:
+                st.warning(f"⚠️ Semantic splitting encountered an issue ({e}). Using standard recursive character splitter.")
+                splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+                docs = splitter.split_documents(raw_docs)
 
             # Fallback for Chunking
             if len(docs) < 2:
