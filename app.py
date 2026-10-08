@@ -143,8 +143,6 @@ if st.session_state.retriever:
         # Generate Response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
-
                 template = """
                 Answer strictly based on the context. Cite sources/quotes.
                 Context: {context}
@@ -155,13 +153,34 @@ if st.session_state.retriever:
                 def format_docs(docs):
                     return "\n\n".join(d.page_content for d in docs)
 
-                chain = (
-                    {"context": st.session_state.retriever | format_docs, "question": RunnablePassthrough()}
-                    | prompt
-                    | llm
-                    | StrOutputParser()
-                )
+                # gemini-1.5-flash was retired; cascade across active Gemini 2.x/3.x models
+                candidate_models = [
+                    "gemini-2.5-flash",
+                    "gemini-2.0-flash",
+                    "gemini-2.5-flash-lite",
+                    "gemini-2.0-flash-lite",
+                    "gemini-1.5-flash-latest"
+                ]
 
-                response = chain.invoke(question)
-                st.markdown(response)
-                st.session_state.chat_history.append(("assistant", response))
+                response = None
+                last_error = None
+                for model_name in candidate_models:
+                    try:
+                        llm = ChatGoogleGenerativeAI(model=model_name, temperature=0)
+                        chain = (
+                            {"context": st.session_state.retriever | format_docs, "question": RunnablePassthrough()}
+                            | prompt
+                            | llm
+                            | StrOutputParser()
+                        )
+                        response = chain.invoke(question)
+                        break
+                    except Exception as e:
+                        last_error = e
+                        continue
+
+                if response is not None:
+                    st.markdown(response)
+                    st.session_state.chat_history.append(("assistant", response))
+                else:
+                    st.error(f"Error generating response: {last_error}")
