@@ -8,6 +8,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import streamlit as st
 import os
+from google import genai
 from langchain_community.document_loaders import YoutubeLoader
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
@@ -44,6 +45,36 @@ if "retriever" not in st.session_state:
     st.session_state.retriever = None
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+
+def get_available_generation_models(api_key=None):
+    """Dynamically query Google AI API for available models supporting text generation."""
+    if api_key:
+        try:
+            client = genai.Client(api_key=api_key)
+            models = []
+            for m in client.models.list():
+                name = m.name
+                if name.startswith("models/"):
+                    name = name[len("models/"):]
+                if any(term in name.lower() for term in ["embedding", "tts", "image", "imagen", "audio", "aqa"]):
+                    continue
+                models.append(name)
+            if models:
+                flash_models = [m for m in models if "flash" in m.lower()]
+                other_models = [m for m in models if "flash" not in m.lower()]
+                return flash_models + other_models
+        except Exception:
+            pass
+
+    return [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash-lite"
+    ]
 
 # --- 1. PROCESSING FUNCTION (Layers 1-6) ---
 def process_video(url):
@@ -153,14 +184,10 @@ if st.session_state.retriever:
                 def format_docs(docs):
                     return "\n\n".join(d.page_content for d in docs)
 
-                # gemini-1.5-flash was retired; cascade across active Gemini 2.x/3.x models
-                candidate_models = [
-                    "gemini-2.5-flash",
-                    "gemini-2.0-flash",
-                    "gemini-2.5-flash-lite",
-                    "gemini-2.0-flash-lite",
-                    "gemini-1.5-flash-latest"
-                ]
+                if "active_model" in st.session_state and st.session_state.active_model:
+                    candidate_models = [st.session_state.active_model]
+                else:
+                    candidate_models = get_available_generation_models(api_key or os.environ.get("GOOGLE_API_KEY"))
 
                 response = None
                 last_error = None
@@ -174,6 +201,7 @@ if st.session_state.retriever:
                             | StrOutputParser()
                         )
                         response = chain.invoke(question)
+                        st.session_state.active_model = model_name
                         break
                     except Exception as e:
                         last_error = e
